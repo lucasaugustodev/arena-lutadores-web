@@ -17,6 +17,11 @@ export class Preloader extends Phaser.Scene {
         this.load.image(`${f.id}_${pose}`, `assets/characters/${f.folder}/${pose}.png`);
       }
     }
+
+    this.load.image("arena_bg", "assets/arena.png");
+    this.load.on("loaderror", (file: any) => {
+      console.warn("missing asset:", file.key);
+    });
   }
 
   create() {

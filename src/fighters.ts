@@ -1,4 +1,4 @@
-// Roster of 5 fighters using Kenney platformer-characters.
+// Roster of 2 anthropomorphic warrior bichos generated via Scenario.gg.
 
 export interface Fighter {
   id: string;
@@ -17,29 +17,14 @@ export interface Fighter {
 
 export const ROSTER: Fighter[] = [
   {
-    id: "adventurer", name: "O Aventureiro", emoji: "⚔️", folder: "adventurer",
-    weapon: "Espada", style: "Equilibrado",
-    hp: 110, atkMin: 13, atkMax: 21, speed: 13, crit: 0.18, color: "#7c3aed",
+    id: "jacare", name: "Jacaré", emoji: "🐊", folder: "jacare",
+    weapon: "Clava de Pedra", style: "Tanque",
+    hp: 140, atkMin: 14, atkMax: 22, speed: 8, crit: 0.10, color: "#4a7a3a",
   },
   {
-    id: "female", name: "A Heroína", emoji: "🗡️", folder: "female",
-    weapon: "Lâmina", style: "Velocista",
-    hp: 100, atkMin: 12, atkMax: 22, speed: 17, crit: 0.22, color: "#e63946",
-  },
-  {
-    id: "player", name: "O Atleta", emoji: "💪", folder: "player",
-    weapon: "Punhos", style: "Marcial",
-    hp: 105, atkMin: 12, atkMax: 19, speed: 15, crit: 0.20, color: "#ffd23d",
-  },
-  {
-    id: "soldier", name: "O Soldado", emoji: "🪖", folder: "soldier",
-    weapon: "Rifle", style: "Tanque",
-    hp: 140, atkMin: 16, atkMax: 24, speed: 9, crit: 0.12, color: "#22b755",
-  },
-  {
-    id: "zombie", name: "O Zumbi", emoji: "🧟", folder: "zombie",
-    weapon: "Mordida", style: "Berserker",
-    hp: 150, atkMin: 15, atkMax: 25, speed: 7, crit: 0.10, color: "#06b6d4",
+    id: "aguia", name: "Águia", emoji: "🦅", folder: "aguia",
+    weapon: "Cimitarra", style: "Velocista",
+    hp: 100, atkMin: 12, atkMax: 22, speed: 17, crit: 0.22, color: "#c4923a",
   },
 ];
 

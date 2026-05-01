@@ -58,7 +58,16 @@ export class Battle extends Phaser.Scene {
   }
 
   private drawArenaBg(width: number, height: number) {
-    // Sky gradient (procedural via stack of rectangles)
+    if (this.textures.exists("arena_bg")) {
+      const bg = this.add.image(width / 2, height / 2, "arena_bg");
+      const scaleX = width / bg.width;
+      const scaleY = height / bg.height;
+      bg.setScale(Math.max(scaleX, scaleY));
+      // Subtle dark overlay near floor for ground separation
+      this.add.rectangle(width / 2, FLOOR_Y + 30, width, 60, 0x000000, 0.35);
+      return;
+    }
+    // Fallback procedural background
     for (let i = 0; i < 40; i++) {
       const y = (i / 40) * FLOOR_Y;
       const t = i / 40;
@@ -68,7 +77,6 @@ export class Battle extends Phaser.Scene {
       const color = (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
       this.add.rectangle(width / 2, y + (FLOOR_Y / 80), width, FLOOR_Y / 40 + 1, color);
     }
-    // Crowd silhouettes
     for (let row = 0; row < 3; row++) {
       const y = 200 + row * 30;
       for (let i = 0; i < width / 14; i++) {
@@ -80,7 +88,6 @@ export class Battle extends Phaser.Scene {
         });
       }
     }
-    // Ground
     this.add.rectangle(width / 2, (FLOOR_Y + height) / 2, width, height - FLOOR_Y, 0x1a0a06);
     for (let i = 0; i < 8; i++) {
       this.add.rectangle(width / 2, FLOOR_Y + 8 + i * 14, width, 2, 0x261410);
