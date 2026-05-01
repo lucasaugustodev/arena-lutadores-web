@@ -78,7 +78,7 @@ export class CharacterSelect extends Phaser.Scene {
     inner.setFillStyle(Phaser.Display.Color.ValueToColor(f.color).darken(35).color);
     const border = this.add.rectangle(0, 0, w, h, 0, 0).setStrokeStyle(3, 0xffffff, 0.2);
 
-    const sprite = this.add.image(0, -50, `${f.id}_idle`).setScale(2.0);
+    const sprite = this.add.image(0, -50, `${f.id}_idle`).setScale(0.18);
     const name = this.add.text(0, 60, f.name, {
       fontSize: "22px", fontStyle: "bold", color: "#fff",
     }).setOrigin(0.5);
@@ -164,7 +164,7 @@ export class CharacterSelect extends Phaser.Scene {
     const oldName = slot.getByName("name");
     if (oldName) oldName.destroy();
     if (fighter) {
-      const img = this.add.image(-65, 5, `${fighter.id}_idle`).setScale(1.4);
+      const img = this.add.image(-65, 5, `${fighter.id}_idle`).setScale(0.12);
       img.setName("preview");
       const txt = this.add.text(70, 0, fighter.name, {
         fontSize: "20px", fontStyle: "bold", color: "#fff",

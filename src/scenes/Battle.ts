@@ -21,8 +21,8 @@ interface Rig {
   victoryTween?: Phaser.Tweens.Tween;
 }
 
-const FLOOR_Y = 540;
-const SPRITE_SCALE = 4.0;
+const FLOOR_Y = 600;
+const SPRITE_SCALE = 0.5;   // Scenario images are 512x768; scale to ~256x384
 const HP_BAR_W = 360;
 
 export class Battle extends Phaser.Scene {
@@ -303,7 +303,7 @@ export class Battle extends Phaser.Scene {
       fontSize: "44px", fontStyle: "bold", color: "#fff5b8",
       stroke: "#000", strokeThickness: 6,
     }).setOrigin(0.5);
-    const winnerSprite = this.add.image(width / 2, height / 2 - 30, `${winner.id}_victory`).setScale(7).setOrigin(0.5);
+    const winnerSprite = this.add.image(width / 2, height / 2 - 30, `${winner.id}_victory`).setScale(0.45).setOrigin(0.5);
     const winnerName = this.add.text(width / 2, height / 2 + 200, winner.name.toUpperCase(), {
       fontSize: "60px", fontStyle: "bold", color: "#ffd23d",
       stroke: "#000", strokeThickness: 8,
@@ -314,7 +314,7 @@ export class Battle extends Phaser.Scene {
 
     this.winnerOverlay = this.add.container(0, 0, [overlay, title, winnerSprite, winnerName, hint]);
     this.tweens.add({
-      targets: winnerSprite, scale: { from: 5, to: 7 }, duration: 350, ease: "Back.Out",
+      targets: winnerSprite, scale: { from: 0.3, to: 0.45 }, duration: 350, ease: "Back.Out",
     });
     this.tweens.add({
       targets: winnerSprite, y: { from: height / 2 - 50, to: height / 2 - 10 },
