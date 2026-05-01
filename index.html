@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arena dos Lutadores</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background:
+        radial-gradient(ellipse at 30% 30%, rgba(150,40,40,0.3) 0%, transparent 60%),
+        radial-gradient(ellipse at 70% 80%, rgba(80,40,150,0.3) 0%, transparent 60%),
+        linear-gradient(135deg, #1a0808 0%, #1a0a30 50%, #0a0a18 100%);
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #game {
+      filter: drop-shadow(0 25px 70px rgba(0,0,0,0.7));
+    }
+  </style>
+</head>
+<body>
+  <div id="game"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
