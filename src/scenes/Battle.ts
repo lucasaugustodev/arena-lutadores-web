@@ -181,44 +181,119 @@ export class Battle extends Phaser.Scene {
   }
 
   private swapPose(rig: Rig, pose: Pose) {
+    if (rig.state === pose) return;
+    // Crossfade: spawn a ghost of the old pose that fades out as new pose appears
+    const oldTex = rig.sprite.texture.key;
+    if (oldTex && oldTex !== `${rig.fighter.id}_${pose}`) {
+      const ghost = this.add.image(rig.sprite.x, rig.sprite.y, oldTex)
+        .setOrigin(rig.sprite.originX, rig.sprite.originY)
+        .setScale(rig.sprite.scaleX, rig.sprite.scaleY)
+        .setDepth(rig.sprite.depth - 1);
+      this.tweens.add({
+        targets: ghost, alpha: 0, duration: 140, ease: "Quad.Out",
+        onComplete: () => ghost.destroy(),
+      });
+    }
     rig.state = pose;
     rig.sprite.setTexture(`${rig.fighter.id}_${pose}`);
+    rig.sprite.alpha = 0.0;
+    this.tweens.add({ targets: rig.sprite, alpha: 1.0, duration: 100, ease: "Quad.Out" });
   }
 
   private lunge(rig: Rig, kind: "quick" | "heavy") {
     rig.bobTween?.stop();
     const dir = rig.facing;
     const distance = kind === "heavy" ? 110 : 80;
+    const baseSx = SPRITE_SCALE * rig.facing;
+    const baseSy = SPRITE_SCALE;
+
+    // Anticipation: small squash backwards before lunge
     this.tweens.add({
-      targets: rig.sprite, x: { from: rig.homeX, to: rig.homeX + dir * distance },
-      duration: 180, ease: "Quad.Out",
-      yoyo: true, hold: 80,
+      targets: rig.sprite,
+      x: { from: rig.homeX, to: rig.homeX - dir * 12 },
+      scaleX: baseSx * 0.94, scaleY: baseSy * 1.06,
+      duration: 90, ease: "Quad.Out",
       onComplete: () => {
-        rig.sprite.x = rig.homeX;
-        rig.sprite.y = rig.homeY;
-        if (rig.state === "attack_quick" || rig.state === "attack_heavy") {
-          this.swapPose(rig, "idle");
-          this.startBob(rig);
-        }
+        // Strike: lunge forward fast with stretch
+        this.spawnTrail(rig);
+        this.tweens.add({
+          targets: rig.sprite,
+          x: { from: rig.homeX - dir * 12, to: rig.homeX + dir * distance },
+          scaleX: baseSx * 1.04, scaleY: baseSy * 0.96,
+          duration: 130, ease: "Quad.Out",
+          onComplete: () => {
+            // Hold at peak briefly
+            this.time.delayedCall(60, () => {
+              // Recovery
+              this.tweens.add({
+                targets: rig.sprite,
+                x: rig.homeX, scaleX: baseSx, scaleY: baseSy,
+                duration: 220, ease: "Back.Out",
+                onComplete: () => {
+                  if (rig.state === "attack_quick" || rig.state === "attack_heavy") {
+                    this.swapPose(rig, "idle");
+                    this.startBob(rig);
+                  }
+                },
+              });
+            });
+          },
+        });
       },
     });
   }
 
+  private spawnTrail(rig: Rig) {
+    // Three faded clones of current pose for motion-blur effect
+    for (let i = 0; i < 3; i++) {
+      const ghost = this.add.image(rig.sprite.x, rig.sprite.y, rig.sprite.texture.key)
+        .setOrigin(rig.sprite.originX, rig.sprite.originY)
+        .setScale(rig.sprite.scaleX, rig.sprite.scaleY)
+        .setAlpha(0.45 - i * 0.12)
+        .setDepth(rig.sprite.depth - 2)
+        .setTint(0xa0c8ff);
+      this.tweens.add({
+        targets: ghost, alpha: 0, duration: 220 + i * 40,
+        onComplete: () => ghost.destroy(),
+      });
+    }
+  }
+
   private recoil(rig: Rig) {
     const dir = -rig.facing;
-    const startX = rig.homeX + dir * 30;
-    rig.sprite.x = startX;
-    // Shake horizontally then return
+    const baseSx = SPRITE_SCALE * rig.facing;
+    const baseSy = SPRITE_SCALE;
+    // Quick punch-out scale on impact + push back
     this.tweens.add({
-      targets: rig.sprite, x: { from: startX - 8, to: startX + 8 },
-      yoyo: true, repeat: 4, duration: 50, ease: "Sine.InOut",
+      targets: rig.sprite,
+      x: rig.homeX + dir * 35,
+      scaleX: baseSx * 1.08, scaleY: baseSy * 0.92,
+      duration: 60, ease: "Quad.Out",
       onComplete: () => {
-        this.tweens.add({ targets: rig.sprite, x: rig.homeX, duration: 200, ease: "Quad.Out" });
+        // Shake while moving back to home
+        this.tweens.add({
+          targets: rig.sprite,
+          x: rig.homeX + dir * 18,
+          scaleX: baseSx, scaleY: baseSy,
+          duration: 80,
+          onComplete: () => {
+            // Vibration
+            this.tweens.add({
+              targets: rig.sprite, x: { from: rig.homeX + dir * 18 - 6, to: rig.homeX + dir * 18 + 6 },
+              yoyo: true, repeat: 3, duration: 40, ease: "Sine.InOut",
+              onComplete: () => {
+                this.tweens.add({ targets: rig.sprite, x: rig.homeX, duration: 180, ease: "Back.Out" });
+              },
+            });
+          },
+        });
       },
     });
-    // Tint flash red
-    rig.sprite.setTintFill(0xff5050);
-    this.time.delayedCall(120, () => rig.sprite.clearTint());
+    // Red tint flash, layered (twice for impact)
+    rig.sprite.setTintFill(0xff7070);
+    this.time.delayedCall(80, () => rig.sprite.clearTint());
+    this.time.delayedCall(140, () => rig.sprite.setTintFill(0xffaaaa));
+    this.time.delayedCall(200, () => rig.sprite.clearTint());
   }
 
   private updateHp(rig: Rig) {
