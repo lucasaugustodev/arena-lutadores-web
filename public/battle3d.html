@@ -139,15 +139,14 @@
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.fog = new THREE.Fog(0x1a0830, 12, 30);
 
-    // === CAMERA (locked, presets validated by rendering in Blender) ===
-    const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 200);
-    // All coords below were tested by rendering the actual arena.glb in Blender.
+    // === CAMERA (locked, validated by Blender viewport at 50mm) ===
+    const camera = new THREE.PerspectiveCamera(23, innerWidth / innerHeight, 0.1, 200);
     const CAM_PRESETS = {
-      "Wide":      { pos: [0, 6.0, 14],  target: [0, 1.4, 0] },   // best default — sees arena & fighters
-      "Side":      { pos: [0, 3.5, 11],  target: [0, 1.4, 0] },   // closer side view
-      "High":      { pos: [0, 5.0, 12],  target: [0, 1.4, 0] },   // elevated angle
-      "3/4":       { pos: [5, 3.5, 10],  target: [0, 1.4, 0] },   // off-axis
-      "Low":       { pos: [0, 2.0, 10],  target: [0, 1.4, 0] },   // chest-height
+      "Wide":      { pos: [0, 6.0, 14],  target: [0, 1.4, 0], fov: 23 },
+      "Side":      { pos: [0, 3.5, 11],  target: [0, 1.4, 0], fov: 28 },
+      "High":      { pos: [0, 5.0, 12],  target: [0, 1.4, 0], fov: 26 },
+      "3/4":       { pos: [5, 3.5, 10],  target: [0, 1.4, 0], fov: 28 },
+      "Low":       { pos: [0, 2.0, 10],  target: [0, 1.4, 0], fov: 30 },
     };
     let currentPreset = "Wide";
     function applyPreset(name) {
@@ -155,9 +154,12 @@
       if (!p) return;
       currentPreset = name;
       camera.position.set(...p.pos);
-      camera.lookAt(...p.target);
       cameraTarget.set(...p.target);
-      // Update preset button UI
+      camera.lookAt(cameraTarget);
+      if (p.fov) {
+        camera.fov = p.fov;
+        camera.updateProjectionMatrix();
+      }
       document.querySelectorAll("[data-cam]").forEach(b => {
         b.classList.toggle("cam-active", b.dataset.cam === name);
       });
