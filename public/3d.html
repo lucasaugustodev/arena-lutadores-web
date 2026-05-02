@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Arena 3D — Jacaré Riggado</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; background: #0a0a18; color: #fff; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+    #scene { position: absolute; inset: 0; }
+    #ui {
+      position: absolute; top: 16px; left: 16px; right: 16px; z-index: 10;
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    }
+    h1 { font-size: 22px; color: #ffd23d; text-shadow: 0 2px 4px #000; margin-right: 24px; }
+    button {
+      padding: 8px 14px; background: #1a1428; color: #ffd23d; border: 2px solid #ffd23d;
+      border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px;
+      transition: all 0.15s;
+    }
+    button:hover { background: #ffd23d; color: #1a1428; transform: translateY(-2px); }
+    button.active { background: #e63946; color: #fff; border-color: #e63946; }
+    #info {
+      position: absolute; bottom: 16px; left: 16px; z-index: 10;
+      background: rgba(0,0,0,0.7); padding: 10px 14px; border-radius: 8px;
+      font-size: 13px; color: #aaa;
+    }
+    #info b { color: #ffd23d; }
+    #loader {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: #0a0a18; color: #ffd23d; font-size: 24px; z-index: 100;
+    }
+  </style>
+</head>
+<body>
+  <div id="loader">Carregando 🐊…</div>
+  <div id="scene"></div>
+  <div id="ui">
+    <h1>🐊 ARENA 3D</h1>
+    <button data-anim="idle" class="active">Idle</button>
+    <button data-anim="walk">Walk</button>
+    <button data-anim="attack_quick">Quick Attack</button>
+    <button data-anim="attack_heavy">Heavy Attack</button>
+    <button data-anim="hit">Hit</button>
+    <button data-anim="ko">KO</button>
+    <button data-anim="victory">Victory</button>
+  </div>
+  <div id="info">
+    Mouse: <b>arrastar</b> para girar · <b>scroll</b> para zoom · <b>botão direito</b> para mover
+  </div>
+
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    } }
+  </script>
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+    import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+
+    const sceneEl = document.getElementById("scene");
+    const loaderEl = document.getElementById("loader");
+    const buttons = document.querySelectorAll("button[data-anim]");
+
+    // === RENDERER ===
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(devicePixelRatio);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    sceneEl.appendChild(renderer.domElement);
+
+    // === SCENE ===
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a0830);
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    // Atmospheric purple/red fog
+    scene.fog = new THREE.Fog(0x1a0830, 8, 22);
+
+    // === CAMERA ===
+    const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 100);
+    camera.position.set(0, 1.4, 4);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 1, 0);
+    controls.enableDamping = true;
+    controls.minDistance = 1.5;
+    controls.maxDistance = 12;
+
+    // === GROUND ===
+    const groundGeom = new THREE.CircleGeometry(8, 64);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x3a2818, roughness: 0.95, metalness: 0,
+    });
+    const ground = new THREE.Mesh(groundGeom, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // Decorative ring around the arena
+    const ringGeom = new THREE.RingGeometry(7.0, 8.0, 64);
+    const ringMat = new THREE.MeshStandardMaterial({ color: 0x2a1410, roughness: 1 });
+    const ring = new THREE.Mesh(ringGeom, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.01;
+    scene.add(ring);
+
+    // === LIGHTS ===
+    const sun = new THREE.DirectionalLight(0xffeeaa, 2.5);
+    sun.position.set(4, 8, 4);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.left = -5; sun.shadow.camera.right = 5;
+    sun.shadow.camera.top = 5; sun.shadow.camera.bottom = -5;
+    sun.shadow.bias = -0.0005;
+    scene.add(sun);
+
+    const fill = new THREE.PointLight(0xff6633, 80, 15);
+    fill.position.set(-3, 2, -2);
+    scene.add(fill);
+
+    const rim = new THREE.PointLight(0x6688ff, 50, 12);
+    rim.position.set(3, 3, -3);
+    scene.add(rim);
+
+    // === LOAD ANIMATIONS ===
+    const ANIMS = ["idle", "walk", "attack_quick", "attack_heavy", "hit", "ko", "victory"];
+    const loader = new GLTFLoader();
+    const clips = {};   // name → AnimationClip
+    let model = null;
+    let mixer = null;
+    let currentAction = null;
+
+    async function loadGlb(name) {
+      return new Promise((resolve, reject) => {
+        loader.load(`assets/3d/jacare/${name}.glb`, resolve, undefined, reject);
+      });
+    }
+
+    async function init() {
+      // Load all GLBs in parallel
+      const promises = ANIMS.map(name => loadGlb(name).then(g => [name, g]));
+      const results = await Promise.all(promises);
+
+      // The first loaded GLB is our actual model in the scene; we extract clips from all
+      const [firstName, firstGlb] = results[0];
+      model = firstGlb.scene;
+      // Enable shadows on all meshes
+      model.traverse(o => {
+        if (o.isMesh) {
+          o.castShadow = true;
+          o.receiveShadow = true;
+        }
+      });
+      // Meshy outputs at human scale (~1.7m). Place feet at y=0 by computing bbox
+      const box = new THREE.Box3().setFromObject(model);
+      model.position.y -= box.min.y;
+      scene.add(model);
+
+      // Mixer for animations
+      mixer = new THREE.AnimationMixer(model);
+      for (const [name, glb] of results) {
+        if (glb.animations && glb.animations.length) {
+          // Rename clip so we can address it by our state name
+          const clip = glb.animations[0].clone();
+          clip.name = name;
+          clips[name] = clip;
+        }
+      }
+      console.log("Loaded clips:", Object.keys(clips));
+
+      loaderEl.style.display = "none";
+      play("idle");
+    }
+
+    function play(name) {
+      const clip = clips[name];
+      if (!clip) { console.warn("no clip:", name); return; }
+      const action = mixer.clipAction(clip);
+      action.reset();
+      action.setLoop(name === "idle" || name === "walk" || name === "victory"
+                     ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
+      action.clampWhenFinished = (name === "ko");
+      // Crossfade from current
+      if (currentAction && currentAction !== action) {
+        currentAction.fadeOut(0.3);
+      }
+      action.fadeIn(0.3).play();
+      currentAction = action;
+
+      // UI active state
+      buttons.forEach(b => b.classList.toggle("active", b.dataset.anim === name));
+    }
+
+    buttons.forEach(b => b.addEventListener("click", () => play(b.dataset.anim)));
+
+    // === LOOP ===
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = clock.getDelta();
+      if (mixer) mixer.update(dt);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Resize
+    addEventListener("resize", () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    init().catch(e => {
+      loaderEl.textContent = "Erro: " + e.message;
+      console.error(e);
+    });
+  </script>
+</body>
+</html>

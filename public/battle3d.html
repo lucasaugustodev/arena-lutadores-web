@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Arena 3D — Jacaré vs Águia</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; background: #0a0a18; color: #fff; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+    #scene { position: absolute; inset: 0; }
+    #hud {
+      position: absolute; top: 0; left: 0; right: 0; padding: 16px 24px;
+      display: flex; gap: 24px; align-items: flex-start; z-index: 10; pointer-events: none;
+    }
+    .player { flex: 1; max-width: 380px; }
+    .player.right { text-align: right; }
+    .player .name {
+      font-size: 24px; font-weight: bold; color: #ffd23d;
+      text-shadow: 0 2px 6px #000;
+    }
+    .player .style { font-size: 14px; color: #fff; opacity: 0.8; }
+    .hp-track {
+      margin-top: 6px; height: 24px; background: rgba(0,0,0,0.6);
+      border: 2px solid #ffd23d; border-radius: 6px; overflow: hidden;
+      position: relative;
+    }
+    .hp-fill { height: 100%; transition: width 0.4s ease, background-color 0.3s; background: #22b755; }
+    .player.right .hp-fill { float: right; }
+    .hp-text {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: bold; text-shadow: 1px 1px 2px #000;
+    }
+    #vs {
+      font-size: 38px; font-weight: bold; color: #e63946;
+      text-shadow: 0 2px 6px #000, 0 0 18px #e63946;
+      align-self: center; margin-top: 4px;
+    }
+    #log {
+      position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.65); padding: 8px 16px; border-radius: 8px;
+      font-size: 14px; color: #ffd23d; min-width: 320px; text-align: center;
+      z-index: 10; pointer-events: none;
+    }
+    #controls {
+      position: absolute; bottom: 16px; right: 16px; z-index: 10;
+      display: flex; gap: 8px;
+    }
+    button {
+      padding: 10px 16px; background: #1a1428; color: #ffd23d; border: 2px solid #ffd23d;
+      border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px;
+    }
+    button:hover { background: #ffd23d; color: #1a1428; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #loader {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: #0a0a18; color: #ffd23d; font-size: 24px; z-index: 100; flex-direction: column; gap: 12px;
+    }
+    .winner-overlay {
+      position: absolute; inset: 0; background: rgba(0,0,0,0.7);
+      display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px;
+      z-index: 50;
+    }
+    .winner-overlay h2 { font-size: 64px; color: #ffd23d; text-shadow: 0 0 30px #ffd23d; }
+    .winner-overlay p { font-size: 28px; color: #fff; }
+  </style>
+</head>
+<body>
+  <div id="loader">Carregando arena 3D…<small id="loader-status" style="font-size:14px;opacity:0.7"></small></div>
+  <div id="scene"></div>
+
+  <div id="hud">
+    <div class="player left">
+      <div class="name">🐊 Jacaré</div>
+      <div class="style">Tanque · 140 HP</div>
+      <div class="hp-track"><div class="hp-fill" id="hp-left" style="width:100%"></div><div class="hp-text" id="hp-text-left">140 / 140</div></div>
+    </div>
+    <div id="vs">VS</div>
+    <div class="player right">
+      <div class="name">🦅 Águia</div>
+      <div class="style">Velocista · 100 HP</div>
+      <div class="hp-track"><div class="hp-fill" id="hp-right" style="width:100%"></div><div class="hp-text" id="hp-text-right">100 / 100</div></div>
+    </div>
+  </div>
+
+  <div id="log">Aguarde…</div>
+  <div id="controls">
+    <button id="btn-fight">⚔ Iniciar Luta</button>
+    <button id="btn-reset">🔄 Reiniciar</button>
+  </div>
+
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    } }
+  </script>
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+    import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+
+    const sceneEl = document.getElementById("scene");
+    const loaderEl = document.getElementById("loader");
+    const loaderStatus = document.getElementById("loader-status");
+    const logEl = document.getElementById("log");
+
+    const FIGHTERS = {
+      jacare: { name: "Jacaré", hp: 140, atkMin: 14, atkMax: 22, speed: 8, crit: 0.10 },
+      aguia:  { name: "Águia",  hp: 100, atkMin: 12, atkMax: 22, speed: 17, crit: 0.22 },
+    };
+    const ANIMS = ["idle", "walk", "attack_quick", "attack_heavy", "hit", "ko", "victory"];
+
+    // === RENDERER ===
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(devicePixelRatio);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    sceneEl.appendChild(renderer.domElement);
+
+    // === SCENE ===
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a0830);
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.fog = new THREE.Fog(0x1a0830, 12, 30);
+
+    // === CAMERA ===
+    // Classic fighting-game angle: at character chest height, slight elevation, side view
+    const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 200);
+    camera.position.set(0, 2.4, 7.5);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 1.4, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.minDistance = 5;
+    controls.maxDistance = 20;
+    controls.minPolarAngle = Math.PI * 0.30;   // slight overhead allowed
+    controls.maxPolarAngle = Math.PI * 0.55;   // not too low
+
+    // === GROUND (placeholder until arena loads) ===
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(10, 64),
+      new THREE.MeshStandardMaterial({ color: 0x3a2418, roughness: 0.95 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(9, 10.5, 64),
+      new THREE.MeshStandardMaterial({ color: 0x2a1410, roughness: 1 })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.01;
+    scene.add(ring);
+
+    // === LIGHTS ===
+    const sun = new THREE.DirectionalLight(0xffeeaa, 2.5);
+    sun.position.set(5, 10, 5);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.left = -8; sun.shadow.camera.right = 8;
+    sun.shadow.camera.top = 8; sun.shadow.camera.bottom = -8;
+    sun.shadow.bias = -0.0005;
+    scene.add(sun);
+    scene.add(new THREE.PointLight(0xff6633, 60, 18, 2)).position.set(-5, 3, -3);
+    scene.add(new THREE.PointLight(0x6688ff, 40, 14, 2)).position.set(5, 4, -3);
+
+    // === FIGHTER LOADER ===
+    const loader = new GLTFLoader();
+    async function loadGlb(url) {
+      return new Promise((resolve, reject) => loader.load(url, resolve, undefined, reject));
+    }
+
+    class Fighter {
+      constructor(id, side) {
+        this.id = id;
+        this.side = side; // "left" | "right"
+        this.stats = FIGHTERS[id];
+        this.hp = this.stats.hp;
+        this.maxHp = this.stats.hp;
+        this.clips = {};
+        this.model = null;
+        this.mixer = null;
+        this.currentAction = null;
+      }
+      async load() {
+        const results = await Promise.all(
+          ANIMS.map(name => loadGlb(`assets/3d/${this.id}/${name}.glb`).then(g => [name, g]))
+        );
+        // Use first as the persistent model
+        this.model = results[0][1].scene;
+        this.model.traverse(o => {
+          if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
+        });
+        const box = new THREE.Box3().setFromObject(this.model);
+        this.model.position.y -= box.min.y;
+
+        // Position & face the opponent
+        const homeX = this.side === "left" ? -1.8 : 1.8;
+        this.model.position.x = homeX;
+        this.homeX = homeX;
+        if (this.side === "right") this.model.rotation.y = Math.PI;
+        scene.add(this.model);
+
+        this.mixer = new THREE.AnimationMixer(this.model);
+        for (const [name, glb] of results) {
+          if (glb.animations?.length) {
+            const clip = glb.animations[0].clone();
+            clip.name = name;
+            this.clips[name] = clip;
+          }
+        }
+      }
+      play(name, opts = {}) {
+        const clip = this.clips[name];
+        if (!clip) return;
+        const action = this.mixer.clipAction(clip);
+        action.reset();
+        const looping = (name === "idle" || name === "walk" || name === "victory");
+        action.setLoop(looping ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
+        action.clampWhenFinished = (name === "ko");
+        if (this.currentAction && this.currentAction !== action) this.currentAction.fadeOut(0.2);
+        action.fadeIn(0.2).play();
+        this.currentAction = action;
+        if (opts.then) this.mixer.addEventListener("finished", function onDone(e) {
+          if (e.action === action) { opts.then(); this.removeEventListener("finished", onDone); }
+        });
+      }
+      lunge(forward = true) {
+        // Use tween for forward thrust during attack
+        const dir = this.side === "left" ? 1 : -1;
+        const target = forward ? this.homeX + dir * 0.7 : this.homeX;
+        const start = this.model.position.x;
+        const dur = 200;
+        const t0 = performance.now();
+        const step = () => {
+          const t = Math.min(1, (performance.now() - t0) / dur);
+          const e = 1 - Math.pow(1 - t, 3);
+          this.model.position.x = start + (target - start) * e;
+          if (t < 1) requestAnimationFrame(step);
+        };
+        step();
+      }
+      takeHit(dmg) {
+        this.hp = Math.max(0, this.hp - dmg);
+        const ratio = this.hp / this.maxHp;
+        const fillEl = document.getElementById(`hp-${this.side}`);
+        const txtEl = document.getElementById(`hp-text-${this.side}`);
+        fillEl.style.width = (ratio * 100) + "%";
+        fillEl.style.background = ratio > 0.5 ? "#22b755" : ratio > 0.25 ? "#c47410" : "#a01020";
+        txtEl.textContent = `${this.hp} / ${this.maxHp}`;
+      }
+      reset() {
+        this.hp = this.maxHp;
+        this.takeHit(0);
+        this.model.position.x = this.homeX;
+        this.play("idle");
+      }
+    }
+
+    // === BATTLE ===
+    let leftFighter, rightFighter;
+    let battleRunning = false;
+
+    function rngDmg(stats) {
+      const base = stats.atkMin + Math.random() * (stats.atkMax - stats.atkMin);
+      const crit = Math.random() < stats.crit;
+      return { dmg: Math.round(base * (crit ? 1.6 : 1)), crit };
+    }
+
+    async function runBattle() {
+      if (battleRunning) return;
+      battleRunning = true;
+      leftFighter.reset(); rightFighter.reset();
+      logEl.textContent = "FIGHT!";
+      cameraShake(0.05);
+
+      const order = leftFighter.stats.speed >= rightFighter.stats.speed
+        ? [leftFighter, rightFighter] : [rightFighter, leftFighter];
+      let round = 1;
+
+      while (leftFighter.hp > 0 && rightFighter.hp > 0 && round < 30) {
+        for (const attacker of order) {
+          if (leftFighter.hp <= 0 || rightFighter.hp <= 0) break;
+          const defender = attacker === leftFighter ? rightFighter : leftFighter;
+          const { dmg, crit } = rngDmg(attacker.stats);
+          const kind = crit || Math.random() < 0.4 ? "attack_heavy" : "attack_quick";
+          attacker.play(kind);
+          attacker.lunge(true);
+          await sleep(450);
+          defender.takeHit(dmg);
+          defender.play("hit");
+          spawnSparks(attacker, defender, crit);
+          cameraShake(crit ? 0.12 : 0.06);
+          logEl.textContent = `${attacker.stats.name} ${crit ? "CRITICAL HIT!" : "ataca"} → -${dmg}`;
+          await sleep(350);
+          attacker.lunge(false);
+          if (defender.hp > 0) {
+            await sleep(200);
+            defender.play("idle");
+            attacker.play("idle");
+          }
+          await sleep(400);
+        }
+        round++;
+      }
+      const winner = leftFighter.hp > 0 ? leftFighter : rightFighter;
+      const loser = winner === leftFighter ? rightFighter : leftFighter;
+      loser.play("ko");
+      await sleep(1000);
+      winner.play("victory");
+      logEl.textContent = `🏆 ${winner.stats.name} VENCEU!`;
+      showWinnerOverlay(winner.stats.name);
+      battleRunning = false;
+    }
+
+    function showWinnerOverlay(name) {
+      const o = document.createElement("div");
+      o.className = "winner-overlay";
+      o.innerHTML = `<h2>VITÓRIA</h2><p>${name}</p>`;
+      o.onclick = () => o.remove();
+      document.body.appendChild(o);
+      setTimeout(() => o.remove(), 4000);
+    }
+
+    function spawnSparks(attacker, defender, crit) {
+      const pos = defender.model.position.clone().add(new THREE.Vector3(0, 1.4, 0));
+      const n = crit ? 24 : 14;
+      for (let i = 0; i < n; i++) {
+        const spark = new THREE.Mesh(
+          new THREE.SphereGeometry(0.05 + Math.random() * 0.04, 6, 6),
+          new THREE.MeshBasicMaterial({ color: crit ? 0xffd23d : 0xfff5b8 })
+        );
+        spark.position.copy(pos);
+        const v = new THREE.Vector3(
+          (Math.random() - 0.5) * 6,
+          Math.random() * 4,
+          (Math.random() - 0.5) * 6
+        );
+        scene.add(spark);
+        const t0 = performance.now();
+        const dur = 600 + Math.random() * 400;
+        const step = () => {
+          const t = (performance.now() - t0) / dur;
+          if (t >= 1) { scene.remove(spark); spark.geometry.dispose(); spark.material.dispose(); return; }
+          spark.position.copy(pos).add(v.clone().multiplyScalar(t));
+          spark.position.y -= 4 * t * t;
+          spark.material.opacity = 1 - t;
+          spark.material.transparent = true;
+          requestAnimationFrame(step);
+        };
+        step();
+      }
+    }
+
+    let shakeAmount = 0;
+    let shakeUntil = 0;
+    function cameraShake(amount) {
+      shakeAmount = amount;
+      shakeUntil = performance.now() + 200;
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // === ARENA (load if available) ===
+    async function loadArena() {
+      try {
+        loaderStatus.textContent = "carregando arena 3D...";
+        const arenaGlb = await loadGlb("assets/3d/arena.glb");
+        const arena = arenaGlb.scene;
+        arena.traverse(o => {
+          if (o.isMesh) { o.receiveShadow = true; o.castShadow = false; }
+        });
+        // Try to detect Y-up vs Z-up; rotate if needed (Meshy text-to-3d often Y-up)
+        // Then size to ~14 units across so fighters fit in the bowl
+        let box = new THREE.Box3().setFromObject(arena);
+        let size = box.getSize(new THREE.Vector3());
+        // If wider than tall by 2x+, that's its natural "footprint" axis; otherwise rotate
+        const targetWidth = 11;   // smaller so fighters dominate the frame
+        const scale = targetWidth / Math.max(size.x, size.z);
+        arena.scale.setScalar(scale);
+        // Recompute and place: floor at y=0, centered XZ, pushed slightly back
+        box = new THREE.Box3().setFromObject(arena);
+        const center = box.getCenter(new THREE.Vector3());
+        arena.position.x -= center.x;
+        arena.position.z -= center.z;
+        arena.position.y -= box.min.y;
+        // Offset arena slightly back so fighters appear in the foreground
+        arena.position.z -= 1;
+        scene.add(arena);
+        // Use placeholder ground UNDER fighters too, in case arena floor is uneven
+        ground.material.color.set(0x2a1810);
+        ground.scale.set(0.4, 0.4, 0.4);
+        // ring.visible = false;
+        return true;
+      } catch (e) {
+        console.warn("arena 3D not available, using placeholder", e.message);
+        return false;
+      }
+    }
+
+    // === MAIN ===
+    async function init() {
+      loaderStatus.textContent = "carregando jacaré...";
+      leftFighter = new Fighter("jacare", "left");
+      await leftFighter.load();
+      loaderStatus.textContent = "carregando águia...";
+      rightFighter = new Fighter("aguia", "right");
+      await rightFighter.load();
+      await loadArena();
+      leftFighter.play("idle");
+      rightFighter.play("idle");
+      loaderEl.style.display = "none";
+      logEl.textContent = "Pronto! Clique em INICIAR LUTA";
+    }
+
+    document.getElementById("btn-fight").onclick = () => runBattle();
+    document.getElementById("btn-reset").onclick = () => {
+      if (battleRunning) return;
+      leftFighter.reset(); rightFighter.reset();
+      logEl.textContent = "Pronto!";
+    };
+
+    // === LOOP ===
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = clock.getDelta();
+      leftFighter?.mixer?.update(dt);
+      rightFighter?.mixer?.update(dt);
+      // Keep target on midpoint between fighters at chest height
+      if (leftFighter?.model && rightFighter?.model) {
+        const midX = (leftFighter.model.position.x + rightFighter.model.position.x) / 2;
+        controls.target.lerp(new THREE.Vector3(midX, 1.4, 0), 0.05);
+      }
+      // Camera shake (offset only the rendered camera, not its target/position state)
+      let shakeOff = new THREE.Vector3();
+      if (performance.now() < shakeUntil && shakeAmount > 0) {
+        shakeOff.set((Math.random() - 0.5) * shakeAmount,
+                     (Math.random() - 0.5) * shakeAmount, 0);
+      }
+      const origPos = camera.position.clone();
+      camera.position.add(shakeOff);
+      controls.update();
+      renderer.render(scene, camera);
+      camera.position.copy(origPos);
+    }
+    animate();
+
+    addEventListener("resize", () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    init().catch(e => { loaderEl.textContent = "Erro: " + e.message; console.error(e); });
+  </script>
+</body>
+</html>
