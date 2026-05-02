@@ -89,11 +89,11 @@
 
   <div id="cam-controls" style="position:absolute;top:140px;right:16px;z-index:10;display:flex;flex-direction:column;gap:6px;">
     <span style="font-size:11px;color:#888;text-align:right">CAMERA</span>
-    <button data-cam="Side" class="cam-btn">Side</button>
-    <button data-cam="3/4" class="cam-btn">3/4</button>
     <button data-cam="Wide" class="cam-btn">Wide</button>
-    <button data-cam="Close" class="cam-btn">Close</button>
-    <button data-cam="Hero" class="cam-btn">Hero</button>
+    <button data-cam="Side" class="cam-btn">Side</button>
+    <button data-cam="High" class="cam-btn">High</button>
+    <button data-cam="3/4" class="cam-btn">3/4</button>
+    <button data-cam="Low" class="cam-btn">Low</button>
   </div>
   <style>
     .cam-btn { padding: 6px 12px; font-size: 12px; min-width: 80px; }
@@ -139,16 +139,17 @@
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.fog = new THREE.Fog(0x1a0830, 12, 30);
 
-    // === CAMERA (locked, presets switchable) ===
+    // === CAMERA (locked, presets validated by rendering in Blender) ===
     const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 200);
+    // All coords below were tested by rendering the actual arena.glb in Blender.
     const CAM_PRESETS = {
-      "Side":   { pos: [0, 2.0, 8],    target: [0, 1.4, 0] },
-      "3/4":    { pos: [4, 3.0, 8],    target: [0, 1.4, 0] },
-      "Wide":   { pos: [0, 4.0, 12],   target: [0, 1.4, 0] },
-      "Close":  { pos: [0, 1.6, 5],    target: [0, 1.4, 0] },
-      "Hero":   { pos: [-3, 1.8, 6],   target: [0, 1.4, 0] },
+      "Wide":      { pos: [0, 6.0, 14],  target: [0, 1.4, 0] },   // best default — sees arena & fighters
+      "Side":      { pos: [0, 3.5, 11],  target: [0, 1.4, 0] },   // closer side view
+      "High":      { pos: [0, 5.0, 12],  target: [0, 1.4, 0] },   // elevated angle
+      "3/4":       { pos: [5, 3.5, 10],  target: [0, 1.4, 0] },   // off-axis
+      "Low":       { pos: [0, 2.0, 10],  target: [0, 1.4, 0] },   // chest-height
     };
-    let currentPreset = "Side";
+    let currentPreset = "Wide";
     function applyPreset(name) {
       const p = CAM_PRESETS[name];
       if (!p) return;
@@ -162,7 +163,7 @@
       });
     }
     const cameraTarget = new THREE.Vector3(0, 1.4, 0);
-    applyPreset("Side");
+    applyPreset("Wide");
 
     // === GROUND (placeholder until arena loads) ===
     const ground = new THREE.Mesh(
