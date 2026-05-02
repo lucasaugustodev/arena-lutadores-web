@@ -396,26 +396,48 @@
     async function loadArena() {
       try {
         loaderStatus.textContent = "carregando arena 3D...";
+        // Reset scene transform in case anything mutated it
+        scene.position.set(0, 0, 0);
+        scene.rotation.set(0, 0, 0);
+        scene.scale.set(1, 1, 1);
+
         const arenaGlb = await loadGlb("assets/3d/arena.glb");
-        const arena = arenaGlb.scene;
-        arena.traverse(o => {
+        // GLTFLoader's gltf.scene may itself be a Scene type — re-parent its
+        // children into a fresh Group so we never touch the imported Scene's transform.
+        const arenaInner = new THREE.Group();
+        arenaInner.name = "ArenaInner";
+        const importedRoot = arenaGlb.scene;
+        // Move all children
+        while (importedRoot.children.length > 0) {
+          arenaInner.add(importedRoot.children[0]);
+        }
+
+        arenaInner.traverse(o => {
           if (o.isMesh) { o.receiveShadow = true; o.castShadow = false; }
         });
-        // Try to detect Y-up vs Z-up; rotate if needed (Meshy text-to-3d often Y-up)
-        // Then size to ~14 units across so fighters fit in the bowl
-        let box = new THREE.Box3().setFromObject(arena);
-        let size = box.getSize(new THREE.Vector3());
-        // If wider than tall by 2x+, that's its natural "footprint" axis; otherwise rotate
+
+        // Bbox in world (no transform yet on arenaInner)
+        const box = new THREE.Box3().setFromObject(arenaInner);
+        const sizeNative = box.getSize(new THREE.Vector3());
+        const centerNative = box.getCenter(new THREE.Vector3());
+
+        // Center the inner group: shift its position so model centers at XZ=0, floor at Y=0
+        arenaInner.position.set(-centerNative.x, -box.min.y, -centerNative.z);
+
+        // Outer group does the scale
         const targetWidth = 14;
-        const scale = targetWidth / Math.max(size.x, size.z);
-        arena.scale.setScalar(scale);
-        box = new THREE.Box3().setFromObject(arena);
-        const center = box.getCenter(new THREE.Vector3());
-        arena.position.x -= center.x;
-        arena.position.z -= center.z;
-        arena.position.y -= box.min.y;
-        scene.add(arena);
-        console.log("Arena placed, bbox:", new THREE.Box3().setFromObject(arena).getSize(new THREE.Vector3()));
+        const scale = targetWidth / Math.max(sizeNative.x, sizeNative.z);
+        const arenaGroup = new THREE.Group();
+        arenaGroup.name = "ArenaGroup";
+        arenaGroup.scale.setScalar(scale);
+        arenaGroup.add(arenaInner);
+        scene.add(arenaGroup);
+
+        const final = new THREE.Box3().setFromObject(arenaGroup);
+        console.log("Arena final bbox min:", final.min.toArray(), "max:", final.max.toArray());
+
+        ground.visible = false;
+        ring.visible = false;
         return true;
       } catch (e) {
         console.warn("arena 3D not available, using placeholder", e.message);
@@ -478,6 +500,11 @@
     });
 
     init().catch(e => { loaderEl.textContent = "Erro: " + e.message; console.error(e); });
+
+    // Expose for debugging
+    window.__three = { THREE, scene, camera, renderer,
+      get arena() { return scene.children.find(c => c.name && c.children.length > 0 && c !== leftFighter?.model && c !== rightFighter?.model); },
+    };
   </script>
 </body>
 </html>
