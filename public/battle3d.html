@@ -225,11 +225,13 @@
         const box = new THREE.Box3().setFromObject(this.model);
         this.model.position.y -= box.min.y;
 
-        // Position & face the opponent
+        // Position & face the opponent (Mixamo default forward = +Z)
+        // Left fighter at -X faces +X (rotate -90° on Y)
+        // Right fighter at +X faces -X (rotate +90° on Y)
         const homeX = this.side === "left" ? -1.8 : 1.8;
         this.model.position.x = homeX;
         this.homeX = homeX;
-        if (this.side === "right") this.model.rotation.y = Math.PI;
+        this.model.rotation.y = this.side === "left" ? -Math.PI / 2 : Math.PI / 2;
         scene.add(this.model);
 
         this.mixer = new THREE.AnimationMixer(this.model);
