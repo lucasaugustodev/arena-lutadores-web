@@ -89,11 +89,7 @@
 
   <div id="cam-controls" style="position:absolute;top:140px;right:16px;z-index:10;display:flex;flex-direction:column;gap:6px;">
     <span style="font-size:11px;color:#888;text-align:right">CAMERA</span>
-    <button data-cam="Wide" class="cam-btn">Wide</button>
-    <button data-cam="Side" class="cam-btn">Side</button>
-    <button data-cam="High" class="cam-btn">High</button>
-    <button data-cam="3/4" class="cam-btn">3/4</button>
-    <button data-cam="Low" class="cam-btn">Low</button>
+    <button data-cam="Default" class="cam-btn">Reset Cam</button>
   </div>
   <style>
     .cam-btn { padding: 6px 12px; font-size: 12px; min-width: 80px; }
@@ -139,16 +135,20 @@
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.fog = new THREE.Fog(0x1a0830, 12, 30);
 
-    // === CAMERA (locked, validated by Blender viewport at 50mm) ===
-    const camera = new THREE.PerspectiveCamera(23, innerWidth / innerHeight, 0.1, 200);
+    // === CAMERA (locked to the exact view validated in Blender) ===
+    // Blender pos (0,-14,6) → three.js (0,6,14). Lens 50mm = horizontal FOV 40°.
+    // For 16:9 viewport that gives vertical FOV ≈ 23°. Aspect-aware compute below.
+    function computeFovV(hFovDeg, aspect) {
+      const h = hFovDeg * Math.PI / 180;
+      return (2 * Math.atan(Math.tan(h / 2) / aspect)) * 180 / Math.PI;
+    }
+    const HORIZONTAL_FOV = 40;
+    const aspect0 = innerWidth / innerHeight;
+    const camera = new THREE.PerspectiveCamera(computeFovV(HORIZONTAL_FOV, aspect0), aspect0, 0.1, 200);
     const CAM_PRESETS = {
-      "Wide":      { pos: [0, 6.0, 14],  target: [0, 1.4, 0], fov: 23 },
-      "Side":      { pos: [0, 3.5, 11],  target: [0, 1.4, 0], fov: 28 },
-      "High":      { pos: [0, 5.0, 12],  target: [0, 1.4, 0], fov: 26 },
-      "3/4":       { pos: [5, 3.5, 10],  target: [0, 1.4, 0], fov: 28 },
-      "Low":       { pos: [0, 2.0, 10],  target: [0, 1.4, 0], fov: 30 },
+      "Default": { pos: [0, 6, 14], target: [0, 1.4, 0], hfov: 40 },
     };
-    let currentPreset = "Wide";
+    let currentPreset = "Default";
     function applyPreset(name) {
       const p = CAM_PRESETS[name];
       if (!p) return;
@@ -156,8 +156,8 @@
       camera.position.set(...p.pos);
       cameraTarget.set(...p.target);
       camera.lookAt(cameraTarget);
-      if (p.fov) {
-        camera.fov = p.fov;
+      if (p.hfov) {
+        camera.fov = computeFovV(p.hfov, innerWidth / innerHeight);
         camera.updateProjectionMatrix();
       }
       document.querySelectorAll("[data-cam]").forEach(b => {
@@ -165,7 +165,7 @@
       });
     }
     const cameraTarget = new THREE.Vector3(0, 1.4, 0);
-    applyPreset("Wide");
+    applyPreset("Default");
 
     // === GROUND (placeholder until arena loads) ===
     const ground = new THREE.Mesh(
@@ -472,6 +472,7 @@
 
     addEventListener("resize", () => {
       camera.aspect = innerWidth / innerHeight;
+      camera.fov = computeFovV(CAM_PRESETS[currentPreset].hfov, camera.aspect);
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
     });
