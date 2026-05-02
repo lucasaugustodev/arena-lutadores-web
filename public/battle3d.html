@@ -286,6 +286,7 @@
         this.hp = this.maxHp;
         this.takeHit(0);
         this.model.position.x = this.homeX;
+        if (this.floorY != null) this.model.position.y = this.floorY;
         this.play("idle");
       }
     }
@@ -679,6 +680,19 @@
       }
     }
 
+    // Raycast down from above a fighter's X to find the actual arena floor height
+    function snapFighterToFloor(fighter) {
+      const arena = scene.children.find(c => c.name === "ArenaGroup");
+      if (!arena) return;
+      const ray = new THREE.Raycaster();
+      ray.set(new THREE.Vector3(fighter.homeX, 20, 0), new THREE.Vector3(0, -1, 0));
+      const hits = ray.intersectObject(arena, true);
+      if (hits.length) {
+        fighter.floorY = hits[0].point.y;
+        fighter.model.position.y = fighter.floorY;
+      }
+    }
+
     // === MAIN ===
     async function init() {
       loaderStatus.textContent = "carregando jacaré...";
@@ -688,6 +702,9 @@
       rightFighter = new Fighter("aguia", "right");
       await rightFighter.load();
       await loadArena();
+      // Snap fighters to actual arena floor (raycast)
+      snapFighterToFloor(leftFighter);
+      snapFighterToFloor(rightFighter);
       leftFighter.play("idle");
       rightFighter.play("idle");
       loaderEl.style.display = "none";
