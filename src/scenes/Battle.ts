@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { getFighter, type Fighter, type Pose } from "../fighters";
+import { getFighter, type Fighter, type Pose, ANIMATED } from "../fighters";
 import { simulate, type BattleScript, type BattleEvent } from "../battle";
 
 interface Rig {
@@ -11,7 +11,7 @@ interface Rig {
   hp: number;
   maxHp: number;
   state: Pose;
-  sprite: Phaser.GameObjects.Image;
+  sprite: Phaser.GameObjects.Sprite;
   shadow: Phaser.GameObjects.Ellipse;
   hpBar: Phaser.GameObjects.Rectangle;
   hpBg: Phaser.GameObjects.Rectangle;
@@ -96,7 +96,7 @@ export class Battle extends Phaser.Scene {
 
   private makeRig(f: Fighter, homeX: number, homeY: number, facing: 1 | -1, side: "left" | "right"): Rig {
     const shadow = this.add.ellipse(homeX, homeY + 6, 100, 22, 0x000000, 0.45);
-    const sprite = this.add.image(homeX, homeY, `${f.id}_idle`)
+    const sprite = this.add.sprite(homeX, homeY, `${f.id}_idle`)
       .setOrigin(0.5, 1)
       .setScale(SPRITE_SCALE * facing, SPRITE_SCALE);
 
@@ -180,11 +180,16 @@ export class Battle extends Phaser.Scene {
     }
   }
 
+  private hasAnim(fighterId: string, pose: Pose): boolean {
+    return (ANIMATED[fighterId] || []).includes(pose);
+  }
+
   private swapPose(rig: Rig, pose: Pose) {
     if (rig.state === pose) return;
-    // Crossfade: spawn a ghost of the old pose that fades out as new pose appears
     const oldTex = rig.sprite.texture.key;
-    if (oldTex && oldTex !== `${rig.fighter.id}_${pose}`) {
+    const newKey = `${rig.fighter.id}_${pose}`;
+    // Ghost crossfade for static→static or to ease transition
+    if (oldTex && oldTex !== newKey && !oldTex.includes("_f")) {
       const ghost = this.add.image(rig.sprite.x, rig.sprite.y, oldTex)
         .setOrigin(rig.sprite.originX, rig.sprite.originY)
         .setScale(rig.sprite.scaleX, rig.sprite.scaleY)
@@ -195,7 +200,14 @@ export class Battle extends Phaser.Scene {
       });
     }
     rig.state = pose;
-    rig.sprite.setTexture(`${rig.fighter.id}_${pose}`);
+    if (this.hasAnim(rig.fighter.id, pose)) {
+      // Play animated frames; idle/walk loop, others play once
+      const loop = (pose === "idle" || pose === "walk" || pose === "victory");
+      rig.sprite.play({ key: `${rig.fighter.id}_${pose}_anim`, repeat: loop ? -1 : 0 });
+    } else {
+      rig.sprite.stop();
+      rig.sprite.setTexture(newKey);
+    }
     rig.sprite.alpha = 0.0;
     this.tweens.add({ targets: rig.sprite, alpha: 1.0, duration: 100, ease: "Quad.Out" });
   }

@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Sprite Visualizer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a18;
+    color: #ffd23d;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    padding: 30px;
+    min-height: 100vh;
+  }
+  h1 {
+    font-size: 32px;
+    margin-bottom: 8px;
+    text-shadow: 2px 2px 0 #000;
+  }
+  .sub {
+    color: #aaa;
+    margin-bottom: 30px;
+    font-size: 14px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 24px;
+  }
+  .card {
+    background: rgba(0,0,0,0.4);
+    border: 2px solid #ffd23d;
+    border-radius: 14px;
+    padding: 16px;
+    text-align: center;
+  }
+  .card h2 {
+    font-size: 18px;
+    margin-bottom: 6px;
+    color: #fff;
+  }
+  .card .label {
+    color: #ffd23d;
+    font-size: 14px;
+    margin-bottom: 12px;
+  }
+  .card .stage {
+    background:
+      radial-gradient(ellipse at 50% 80%, rgba(255,200,100,0.2), transparent 60%),
+      linear-gradient(180deg, #1a0a30, #0a0a18);
+    width: 100%;
+    height: 360px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    border-radius: 8px;
+    padding: 12px;
+    overflow: hidden;
+  }
+  .card img {
+    max-height: 320px;
+    max-width: 100%;
+    image-rendering: auto;
+    filter: drop-shadow(0 8px 16px rgba(0,0,0,0.5));
+  }
+  .card .controls {
+    margin-top: 12px;
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .card button {
+    background: #7c3aed;
+    color: white;
+    border: none;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: bold;
+  }
+  .card button:hover { background: #9c5aed; }
+  .card button.active { background: #ff7733; }
+  .card .meta {
+    color: #888;
+    font-size: 11px;
+    margin-top: 6px;
+  }
+  .speed {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: center;
+    font-size: 11px;
+    color: #aaa;
+  }
+  .speed input { width: 100px; }
+  .global-controls {
+    margin-bottom: 24px;
+    padding: 12px 16px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 8px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .global-controls button {
+    background: #22b755;
+    color: white;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+  }
+</style>
+</head>
+<body>
+  <h1>🎬 Sprite Visualizer</h1>
+  <div class="sub">Animações geradas via fal.ai (Kling Video). Cada card mostra um lutador + ação reproduzindo em loop.</div>
+
+  <div class="global-controls">
+    <button onclick="reloadAll()">🔄 Reload All</button>
+    <span style="color: #aaa; font-size: 12px;">Velocidade global:</span>
+    <input id="globalSpeed" type="range" min="4" max="30" value="14" oninput="setGlobalSpeed(this.value)">
+    <span id="globalSpeedLabel" style="color: #ffd23d; font-size: 12px;">14 fps</span>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+<script>
+const FIGHTERS = ["jacare", "aguia"];
+const ACTIONS  = ["idle", "walk", "attack_quick", "attack_heavy", "hit", "ko", "victory"];
+const FRAMES_PER_ANIM = 8;
+
+const cards = [];
+
+async function detectFrames(fighter, action) {
+  // Try to load frame_001 — if it 404s, no animation; else has frames.
+  const url = `assets/characters/${fighter}/${action}_frames/frame_001.png`;
+  try {
+    const r = await fetch(url, { method: "HEAD" });
+    return r.ok;
+  } catch { return false; }
+}
+
+function makeCard(fighter, action, hasAnim) {
+  const card = document.createElement("div");
+  card.className = "card";
+  const display = action.replace(/_/g, " ");
+  card.innerHTML = `
+    <h2>${fighter.toUpperCase()}</h2>
+    <div class="label">${display} ${hasAnim ? "🎬" : "📷 (static)"}</div>
+    <div class="stage"><img class="frame" alt=""></div>
+    <div class="meta"></div>
+    <div class="speed">
+      <span>fps:</span>
+      <input type="range" min="4" max="30" value="14" data-card="${fighter}_${action}">
+      <span class="fpsLabel">14</span>
+    </div>
+  `;
+  const img = card.querySelector("img");
+  const meta = card.querySelector(".meta");
+  const fpsLabel = card.querySelector(".fpsLabel");
+  const speed = card.querySelector("input[type=range]");
+
+  const state = { idx: 0, fps: 14, fighter, action, hasAnim, timer: null };
+  cards.push(state);
+
+  speed.addEventListener("input", () => {
+    state.fps = parseInt(speed.value);
+    fpsLabel.textContent = state.fps;
+    restart(state);
+  });
+
+  function restart(s) {
+    if (s.timer) clearInterval(s.timer);
+    if (!s.hasAnim) {
+      img.src = `assets/characters/${s.fighter}/${s.action}.png`;
+      meta.textContent = "static frame";
+      return;
+    }
+    s.idx = 0;
+    s.timer = setInterval(() => {
+      s.idx = (s.idx + 1) % FRAMES_PER_ANIM;
+      const num = String(s.idx + 1).padStart(3, "0");
+      img.src = `assets/characters/${s.fighter}/${s.action}_frames/frame_${num}.png`;
+      meta.textContent = `frame ${s.idx + 1}/${FRAMES_PER_ANIM}`;
+    }, 1000 / s.fps);
+  }
+  restart(state);
+  return card;
+}
+
+async function build() {
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+  for (const c of cards) if (c.timer) clearInterval(c.timer);
+  cards.length = 0;
+
+  for (const f of FIGHTERS) {
+    for (const a of ACTIONS) {
+      const has = await detectFrames(f, a);
+      grid.appendChild(makeCard(f, a, has));
+    }
+  }
+}
+
+function reloadAll() { build(); }
+
+function setGlobalSpeed(v) {
+  document.getElementById("globalSpeedLabel").textContent = v + " fps";
+  for (const c of cards) {
+    c.fps = parseInt(v);
+    if (c.timer) {
+      clearInterval(c.timer);
+      const img = grid.querySelector(`input[data-card="${c.fighter}_${c.action}"]`).closest(".card").querySelector("img");
+      const meta = grid.querySelector(`input[data-card="${c.fighter}_${c.action}"]`).closest(".card").querySelector(".meta");
+      const slider = grid.querySelector(`input[data-card="${c.fighter}_${c.action}"]`);
+      slider.value = v;
+      slider.parentElement.querySelector(".fpsLabel").textContent = v;
+      if (c.hasAnim) {
+        c.timer = setInterval(() => {
+          c.idx = (c.idx + 1) % FRAMES_PER_ANIM;
+          const num = String(c.idx + 1).padStart(3, "0");
+          img.src = `assets/characters/${c.fighter}/${c.action}_frames/frame_${num}.png`;
+          meta.textContent = `frame ${c.idx + 1}/${FRAMES_PER_ANIM}`;
+        }, 1000 / c.fps);
+      }
+    }
+  }
+}
+
+build();
+</script>
+</body>
+</html>

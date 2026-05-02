@@ -31,6 +31,14 @@ export const ROSTER: Fighter[] = [
 export const POSES = ["idle", "walk", "attack_quick", "attack_heavy", "hit", "ko", "victory"] as const;
 export type Pose = typeof POSES[number];
 
+// Map of fighter→actions that have multi-frame animations (8 frames each).
+// Other actions use the single static PNG.
+export const ANIMATED: Record<string, Pose[]> = {
+  jacare: ["attack_quick", "ko", "victory", "walk"],
+  aguia:  ["attack_quick", "attack_heavy", "hit", "ko", "victory", "walk"],
+};
+export const FRAMES_PER_ANIM = 8;
+
 export function getFighter(id: string): Fighter | undefined {
   return ROSTER.find(f => f.id === id);
 }
