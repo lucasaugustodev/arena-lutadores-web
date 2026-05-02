@@ -1,0 +1,20 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - generic:
+      - generic: 🐊 Jacaré
+      - generic: Tanque · 140 HP
+      - generic:
+        - generic: 140 / 140
+    - generic: VS
+    - generic:
+      - generic: 🦅 Águia
+      - generic: Velocista · 100 HP
+      - generic:
+        - generic: 100 / 100
+  - generic: Pronto! Clique em INICIAR LUTA
+  - generic [ref=e6]:
+    - button "⚔ Iniciar Luta" [ref=e7] [cursor=pointer]
+    - button "🔄 Reiniciar" [ref=e8] [cursor=pointer]
+  - generic [ref=e9]:
+    - generic [ref=e10]: CAMERA
+    - button "Reset Cam" [ref=e11] [cursor=pointer]

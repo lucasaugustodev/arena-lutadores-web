@@ -298,11 +298,80 @@
       return { dmg: Math.round(base * (crit ? 1.6 : 1)), crit };
     }
 
+    // Tween a fighter's X position over duration (ms)
+    function tweenX(fighter, targetX, duration) {
+      return new Promise(resolve => {
+        const startX = fighter.model.position.x;
+        const t0 = performance.now();
+        const step = () => {
+          const t = Math.min(1, (performance.now() - t0) / duration);
+          const e = t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2;
+          fighter.model.position.x = startX + (targetX - startX) * e;
+          if (t < 1) requestAnimationFrame(step);
+          else resolve();
+        };
+        step();
+      });
+    }
+
+    // ===== CINEMATIC HELPERS =====
+    let timeScale = 1.0;       // 1 = normal, <1 = slow-mo
+    let freezeUntil = 0;       // hit pause: skip mixer updates until this time
+    function hitPause(ms) { freezeUntil = performance.now() + ms; }
+    function slowMo(scale, durationMs) {
+      timeScale = scale;
+      setTimeout(() => { timeScale = 1.0; }, durationMs);
+    }
+
+    async function showRoundIntro(text, sub = "") {
+      const el = document.createElement("div");
+      el.style.cssText = `
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        flex-direction: column; gap: 12px; z-index: 60; pointer-events: none;
+        background: radial-gradient(ellipse at center, rgba(0,0,0,0.5), rgba(0,0,0,0));
+      `;
+      el.innerHTML = `
+        <div style="font-size:96px; font-weight:bold; color:#ffd23d;
+          text-shadow: 0 0 40px #ffd23d, 0 4px 12px #000;
+          transform: scale(0.5); opacity: 0; transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);">${text}</div>
+        ${sub ? `<div style="font-size:32px; color:#fff; opacity:0; transition: opacity 0.5s 0.3s;">${sub}</div>` : ""}
+      `;
+      document.body.appendChild(el);
+      requestAnimationFrame(() => {
+        el.firstElementChild.style.transform = "scale(1)";
+        el.firstElementChild.style.opacity = "1";
+        if (el.lastElementChild !== el.firstElementChild) el.lastElementChild.style.opacity = "1";
+      });
+      await sleep(1400);
+      el.style.transition = "opacity 0.4s";
+      el.style.opacity = "0";
+      await sleep(400);
+      el.remove();
+    }
+
+    function showVignette(color = "#e63946", duration = 250) {
+      const v = document.createElement("div");
+      v.style.cssText = `
+        position: absolute; inset: 0; pointer-events: none; z-index: 30;
+        box-shadow: inset 0 0 200px 60px ${color};
+        opacity: 0; transition: opacity 0.05s;
+      `;
+      document.body.appendChild(v);
+      requestAnimationFrame(() => v.style.opacity = "1");
+      setTimeout(() => {
+        v.style.transition = `opacity ${duration}ms`;
+        v.style.opacity = "0";
+        setTimeout(() => v.remove(), duration + 50);
+      }, 60);
+    }
+
     async function runBattle() {
       if (battleRunning) return;
       battleRunning = true;
       leftFighter.reset(); rightFighter.reset();
-      logEl.textContent = "FIGHT!";
+      logEl.textContent = "";
+
+      await showRoundIntro("ROUND 1", "FIGHT!");
       cameraShake(0.05);
 
       const order = leftFighter.stats.speed >= rightFighter.stats.speed
@@ -315,30 +384,64 @@
           const defender = attacker === leftFighter ? rightFighter : leftFighter;
           const { dmg, crit } = rngDmg(attacker.stats);
           const kind = crit || Math.random() < 0.4 ? "attack_heavy" : "attack_quick";
+
+          // === STEP 1: walk to melee range ===
+          const dir = attacker.homeX < defender.homeX ? 1 : -1;
+          const meleeX = defender.homeX - dir * 1.0;   // stop 1m from defender
+          attacker.play("walk");
+          await tweenX(attacker, meleeX, 480);
+
+          // === STEP 2: strike ===
           attacker.play(kind);
-          attacker.lunge(true);
-          await sleep(450);
+          // Slash trail spawned along forward direction
+          spawnSlashTrail(attacker, defender, crit);
+          await sleep(kind === "attack_heavy" ? 380 : 280);  // wait for impact frame
+
+          // === STEP 3: contact — hit pause + sparks + shake ===
           defender.takeHit(dmg);
           defender.play("hit");
+          // Knockback the defender slightly
+          const kb = crit ? 0.5 : 0.25;
+          tweenX(defender, defender.model.position.x + dir * kb, 180);
+          spawnHitFlash(defender, crit);
           spawnSparks(attacker, defender, crit);
-          cameraShake(crit ? 0.12 : 0.06);
-          logEl.textContent = `${attacker.stats.name} ${crit ? "CRITICAL HIT!" : "ataca"} → -${dmg}`;
+          if (crit) spawnSpeedLines(defender);
+          showVignette(crit ? "#ff3344" : "#ff7733", crit ? 350 : 200);
+          cameraShake(crit ? 0.18 : 0.10);
+          hitPause(crit ? 130 : 80);
+          logEl.textContent = `${attacker.stats.name} ${crit ? "💥 CRITICAL HIT!" : "ataca"} → -${dmg}`;
+
           await sleep(350);
-          attacker.lunge(false);
+          // Knockback recovery
           if (defender.hp > 0) {
-            await sleep(200);
-            defender.play("idle");
-            attacker.play("idle");
+            tweenX(defender, defender.homeX, 250);
           }
-          await sleep(400);
+
+          // === STEP 4: walk back to home ===
+          if (defender.hp > 0) {
+            attacker.play("walk");
+            await tweenX(attacker, attacker.homeX, 380);
+            attacker.play("idle");
+            defender.play("idle");
+          }
+          await sleep(220);
         }
         round++;
       }
+
       const winner = leftFighter.hp > 0 ? leftFighter : rightFighter;
       const loser = winner === leftFighter ? rightFighter : leftFighter;
+
+      // === FINISHING SLOW-MO ===
+      slowMo(0.25, 800);
       loser.play("ko");
-      await sleep(1000);
+      hitPause(200);
+      showVignette("#ff0033", 600);
+      cameraShake(0.25);
+      await sleep(1500);
+
       winner.play("victory");
+      await showRoundIntro(`${winner.stats.emoji}  K.O.`, `${winner.stats.name} venceu!`);
       logEl.textContent = `🏆 ${winner.stats.name} VENCEU!`;
       showWinnerOverlay(winner.stats.name);
       battleRunning = false;
@@ -353,34 +456,163 @@
       setTimeout(() => o.remove(), 4000);
     }
 
+    // ===== VFX =====
+
+    // Big radial flash burst at point of contact (camera-facing sprite)
+    function spawnHitFlash(defender, crit) {
+      const pos = defender.model.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+      const tex = makeRadialTexture(crit ? "#ffd23d" : "#fff5b8");
+      const mat = new THREE.SpriteMaterial({
+        map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+      });
+      const sprite = new THREE.Sprite(mat);
+      sprite.position.copy(pos);
+      sprite.scale.set(0.3, 0.3, 0.3);
+      scene.add(sprite);
+      const t0 = performance.now();
+      const dur = crit ? 300 : 200;
+      const targetScale = crit ? 4.0 : 2.5;
+      const step = () => {
+        const t = Math.min(1, (performance.now() - t0) / dur);
+        const e = 1 - Math.pow(1 - t, 3);
+        const s = 0.3 + targetScale * e;
+        sprite.scale.set(s, s, s);
+        mat.opacity = 1 - t;
+        if (t < 1) requestAnimationFrame(step);
+        else { scene.remove(sprite); mat.dispose(); tex.dispose(); }
+      };
+      step();
+    }
+
     function spawnSparks(attacker, defender, crit) {
       const pos = defender.model.position.clone().add(new THREE.Vector3(0, 1.4, 0));
-      const n = crit ? 24 : 14;
+      const n = crit ? 28 : 16;
+      const sparkTex = makeRadialTexture(crit ? "#ffd23d" : "#ffffff");
       for (let i = 0; i < n; i++) {
-        const spark = new THREE.Mesh(
-          new THREE.SphereGeometry(0.05 + Math.random() * 0.04, 6, 6),
-          new THREE.MeshBasicMaterial({ color: crit ? 0xffd23d : 0xfff5b8 })
-        );
-        spark.position.copy(pos);
+        const mat = new THREE.SpriteMaterial({
+          map: sparkTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+        });
+        const sprite = new THREE.Sprite(mat);
+        sprite.position.copy(pos);
+        const baseSize = crit ? 0.4 : 0.25;
+        sprite.scale.set(baseSize, baseSize, baseSize);
         const v = new THREE.Vector3(
-          (Math.random() - 0.5) * 6,
-          Math.random() * 4,
-          (Math.random() - 0.5) * 6
+          (Math.random() - 0.5) * 7,
+          (Math.random() - 0.2) * 5,
+          (Math.random() - 0.5) * 5
         );
-        scene.add(spark);
+        scene.add(sprite);
         const t0 = performance.now();
-        const dur = 600 + Math.random() * 400;
+        const dur = 500 + Math.random() * 350;
         const step = () => {
           const t = (performance.now() - t0) / dur;
-          if (t >= 1) { scene.remove(spark); spark.geometry.dispose(); spark.material.dispose(); return; }
-          spark.position.copy(pos).add(v.clone().multiplyScalar(t));
-          spark.position.y -= 4 * t * t;
-          spark.material.opacity = 1 - t;
-          spark.material.transparent = true;
+          if (t >= 1) { scene.remove(sprite); mat.dispose(); return; }
+          sprite.position.copy(pos).add(v.clone().multiplyScalar(t));
+          sprite.position.y -= 4 * t * t;
+          mat.opacity = 1 - t;
           requestAnimationFrame(step);
         };
         step();
       }
+    }
+
+    // White slash arc — billboard plane stretched along attack direction
+    function spawnSlashTrail(attacker, defender, crit) {
+      // Render at midpoint between fighters, oriented horizontally
+      const start = attacker.model.position.clone().add(new THREE.Vector3(0, 1.4, 0));
+      const end   = defender.model.position.clone().add(new THREE.Vector3(0, 1.4, 0));
+      const mid   = start.clone().lerp(end, 0.5);
+      const dir   = end.clone().sub(start);
+      const length = dir.length();
+      const angle = Math.atan2(dir.x, dir.z);
+
+      const tex = makeSlashTexture(crit ? "#ffeebb" : "#ffffff");
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex, transparent: true, blending: THREE.AdditiveBlending,
+        depthWrite: false, side: THREE.DoubleSide,
+      });
+      const geom = new THREE.PlaneGeometry(length * 1.2, 0.6);
+      const mesh = new THREE.Mesh(geom, mat);
+      mesh.position.copy(mid);
+      mesh.rotation.set(-Math.PI / 2, 0, -angle);   // lay flat, oriented
+      scene.add(mesh);
+
+      const t0 = performance.now();
+      const dur = 200;
+      const step = () => {
+        const t = Math.min(1, (performance.now() - t0) / dur);
+        mat.opacity = 1 - t;
+        const s = 1 + t * 0.5;
+        mesh.scale.set(s, 1 + t, 1);
+        if (t < 1) requestAnimationFrame(step);
+        else { scene.remove(mesh); geom.dispose(); mat.dispose(); tex.dispose(); }
+      };
+      step();
+    }
+
+    // Speed lines: ring of radial planes shrinking inward
+    function spawnSpeedLines(target) {
+      const pos = target.model.position.clone().add(new THREE.Vector3(0, 1.4, 0));
+      const tex = makeRadialTexture("#ffd23d");
+      const n = 8;
+      for (let i = 0; i < n; i++) {
+        const angle = (i / n) * Math.PI * 2;
+        const mat = new THREE.SpriteMaterial({
+          map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+          color: 0xffeeaa,
+        });
+        const sprite = new THREE.Sprite(mat);
+        const radius0 = 3.0;
+        sprite.position.copy(pos).add(new THREE.Vector3(Math.cos(angle) * radius0, 0, Math.sin(angle) * radius0));
+        sprite.scale.set(0.6, 0.15, 0.6);
+        scene.add(sprite);
+        const t0 = performance.now();
+        const dur = 250;
+        const step = () => {
+          const t = Math.min(1, (performance.now() - t0) / dur);
+          const r = radius0 * (1 - t);
+          sprite.position.copy(pos).add(new THREE.Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r));
+          mat.opacity = 1 - t;
+          if (t < 1) requestAnimationFrame(step);
+          else { scene.remove(sprite); mat.dispose(); }
+        };
+        step();
+      }
+    }
+
+    // ===== Procedural textures (cached) =====
+    const _texCache = {};
+    function makeRadialTexture(colorHex) {
+      const key = `radial_${colorHex}`;
+      if (_texCache[key]) return _texCache[key];
+      const c = document.createElement("canvas");
+      c.width = c.height = 128;
+      const ctx = c.getContext("2d");
+      const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      grad.addColorStop(0,  colorHex);
+      grad.addColorStop(0.4, colorHex + "aa");
+      grad.addColorStop(1,  colorHex + "00");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 128, 128);
+      const tex = new THREE.CanvasTexture(c);
+      _texCache[key] = tex;
+      return tex;
+    }
+    function makeSlashTexture(colorHex) {
+      const key = `slash_${colorHex}`;
+      if (_texCache[key]) return _texCache[key];
+      const c = document.createElement("canvas");
+      c.width = 256; c.height = 64;
+      const ctx = c.getContext("2d");
+      const grad = ctx.createLinearGradient(0, 32, 256, 32);
+      grad.addColorStop(0, colorHex + "00");
+      grad.addColorStop(0.5, colorHex + "ff");
+      grad.addColorStop(1, colorHex + "00");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 24, 256, 16);
+      const tex = new THREE.CanvasTexture(c);
+      _texCache[key] = tex;
+      return tex;
     }
 
     let shakeAmount = 0;
@@ -474,7 +706,9 @@
     const clock = new THREE.Clock();
     function animate() {
       requestAnimationFrame(animate);
-      const dt = clock.getDelta();
+      const dtRaw = clock.getDelta();
+      const paused = performance.now() < freezeUntil;
+      const dt = paused ? 0 : dtRaw * timeScale;
       leftFighter?.mixer?.update(dt);
       rightFighter?.mixer?.update(dt);
       // Camera always looks at the cameraTarget (locked)

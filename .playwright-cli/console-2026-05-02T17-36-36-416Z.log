@@ -1,0 +1,8 @@
+Total messages: 6 (Errors: 1, Warnings: 0)
+
+[ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.ico:0
+[LOG] Arena placed, bbox: Vector3 @ http://localhost:5173/battle3d.html:417
+[LOG] Arena placed, bbox: Vector3 @ http://localhost:5173/battle3d.html:417
+[LOG] Arena final bbox min: [-1.9555405378341675, 4, -10] max: [11.955540537834167, 11.53911280632019, 4] size: [13.911081075668335, 7.53911280632019, 14] @ http://localhost:5173/battle3d.html:428
+[LOG] Arena final bbox min: [-6.9555405378341675, 0, -7] max: [6.9555405378341675, 7.53911280632019, 7] @ http://localhost:5173/battle3d.html:436
+[LOG] Arena final bbox min: [-6.9555405378341675, 0, -7] max: [6.9555405378341675, 7.53911280632019, 7] @ http://localhost:5173/battle3d.html:668
