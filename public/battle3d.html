@@ -87,6 +87,19 @@
     <button id="btn-reset">🔄 Reiniciar</button>
   </div>
 
+  <div id="cam-controls" style="position:absolute;top:140px;right:16px;z-index:10;display:flex;flex-direction:column;gap:6px;">
+    <span style="font-size:11px;color:#888;text-align:right">CAMERA</span>
+    <button data-cam="Side" class="cam-btn">Side</button>
+    <button data-cam="3/4" class="cam-btn">3/4</button>
+    <button data-cam="Wide" class="cam-btn">Wide</button>
+    <button data-cam="Close" class="cam-btn">Close</button>
+    <button data-cam="Hero" class="cam-btn">Hero</button>
+  </div>
+  <style>
+    .cam-btn { padding: 6px 12px; font-size: 12px; min-width: 80px; }
+    .cam-btn.cam-active { background: #e63946; color: #fff; border-color: #e63946; }
+  </style>
+
   <script type="importmap">
     { "imports": {
       "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -95,7 +108,6 @@
   </script>
   <script type="module">
     import * as THREE from "three";
-    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
@@ -127,18 +139,30 @@
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.fog = new THREE.Fog(0x1a0830, 12, 30);
 
-    // === CAMERA ===
-    // Classic fighting-game angle: at character chest height, slight elevation, side view
-    const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 200);
-    camera.position.set(0, 2.4, 7.5);
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 1.4, 0);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
-    controls.minDistance = 5;
-    controls.maxDistance = 20;
-    controls.minPolarAngle = Math.PI * 0.30;   // slight overhead allowed
-    controls.maxPolarAngle = Math.PI * 0.55;   // not too low
+    // === CAMERA (locked, presets switchable) ===
+    const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 200);
+    const CAM_PRESETS = {
+      "Side":   { pos: [0, 2.0, 8],    target: [0, 1.4, 0] },
+      "3/4":    { pos: [4, 3.0, 8],    target: [0, 1.4, 0] },
+      "Wide":   { pos: [0, 4.0, 12],   target: [0, 1.4, 0] },
+      "Close":  { pos: [0, 1.6, 5],    target: [0, 1.4, 0] },
+      "Hero":   { pos: [-3, 1.8, 6],   target: [0, 1.4, 0] },
+    };
+    let currentPreset = "Side";
+    function applyPreset(name) {
+      const p = CAM_PRESETS[name];
+      if (!p) return;
+      currentPreset = name;
+      camera.position.set(...p.pos);
+      camera.lookAt(...p.target);
+      cameraTarget.set(...p.target);
+      // Update preset button UI
+      document.querySelectorAll("[data-cam]").forEach(b => {
+        b.classList.toggle("cam-active", b.dataset.cam === name);
+      });
+    }
+    const cameraTarget = new THREE.Vector3(0, 1.4, 0);
+    applyPreset("Side");
 
     // === GROUND (placeholder until arena loads) ===
     const ground = new THREE.Mesh(
@@ -379,22 +403,16 @@
         let box = new THREE.Box3().setFromObject(arena);
         let size = box.getSize(new THREE.Vector3());
         // If wider than tall by 2x+, that's its natural "footprint" axis; otherwise rotate
-        const targetWidth = 11;   // smaller so fighters dominate the frame
+        const targetWidth = 14;
         const scale = targetWidth / Math.max(size.x, size.z);
         arena.scale.setScalar(scale);
-        // Recompute and place: floor at y=0, centered XZ, pushed slightly back
         box = new THREE.Box3().setFromObject(arena);
         const center = box.getCenter(new THREE.Vector3());
         arena.position.x -= center.x;
         arena.position.z -= center.z;
         arena.position.y -= box.min.y;
-        // Offset arena slightly back so fighters appear in the foreground
-        arena.position.z -= 1;
         scene.add(arena);
-        // Use placeholder ground UNDER fighters too, in case arena floor is uneven
-        ground.material.color.set(0x2a1810);
-        ground.scale.set(0.4, 0.4, 0.4);
-        // ring.visible = false;
+        console.log("Arena placed, bbox:", new THREE.Box3().setFromObject(arena).getSize(new THREE.Vector3()));
         return true;
       } catch (e) {
         console.warn("arena 3D not available, using placeholder", e.message);
@@ -423,6 +441,9 @@
       leftFighter.reset(); rightFighter.reset();
       logEl.textContent = "Pronto!";
     };
+    document.querySelectorAll("[data-cam]").forEach(b => {
+      b.onclick = () => applyPreset(b.dataset.cam);
+    });
 
     // === LOOP ===
     const clock = new THREE.Clock();
@@ -431,12 +452,9 @@
       const dt = clock.getDelta();
       leftFighter?.mixer?.update(dt);
       rightFighter?.mixer?.update(dt);
-      // Keep target on midpoint between fighters at chest height
-      if (leftFighter?.model && rightFighter?.model) {
-        const midX = (leftFighter.model.position.x + rightFighter.model.position.x) / 2;
-        controls.target.lerp(new THREE.Vector3(midX, 1.4, 0), 0.05);
-      }
-      // Camera shake (offset only the rendered camera, not its target/position state)
+      // Camera always looks at the cameraTarget (locked)
+      camera.lookAt(cameraTarget);
+      // Camera shake (offset only the rendered camera)
       let shakeOff = new THREE.Vector3();
       if (performance.now() < shakeUntil && shakeAmount > 0) {
         shakeOff.set((Math.random() - 0.5) * shakeAmount,
@@ -444,7 +462,6 @@
       }
       const origPos = camera.position.clone();
       camera.position.add(shakeOff);
-      controls.update();
       renderer.render(scene, camera);
       camera.position.copy(origPos);
     }
